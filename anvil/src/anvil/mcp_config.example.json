@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "filesystem-example": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "C:\\Users\\YourName\\Projects"
+      ],
+      "disabled": true
+    },
+    "fetch-example": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-fetch"],
+      "disabled": true
+    }
+  }
+}

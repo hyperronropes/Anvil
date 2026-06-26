@@ -1,0 +1,66 @@
+{
+  "name": "anvil",
+  "version": "0.1.0",
+  "description": "Anvil — AI coding workspace",
+  "main": "electron/main.js",
+  "type": "module",
+  "author": "Anvil",
+  "scripts": {
+    "predev": "node scripts/freeport.mjs",
+    "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env ELECTRON_DEV=1 electron .\"",
+    "build": "vite build",
+    "start": "electron .",
+    "dist": "vite build && electron-builder && node scripts/patch-win-branding.mjs",
+    "dist:brand": "node scripts/patch-win-branding.mjs"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "postcss": "^8.4.38",
+    "rcedit": "^5.0.2",
+    "tailwindcss": "^3.4.4",
+    "typescript": "^5.4.5",
+    "vite": "^5.3.1",
+    "wait-on": "^7.2.0"
+  },
+  "dependencies": {
+    "highlight.js": "^11.11.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0"
+  },
+  "build": {
+    "appId": "com.anvil.app",
+    "productName": "Anvil",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../build/_pydist/bridge",
+        "to": "bridge"
+      },
+      {
+        "from": "../build/_pydist/proxy",
+        "to": "proxy"
+      }
+    ],
+    "win": {
+      "target": "dir",
+      "icon": "assets/icon.ico",
+      "executableName": "Anvil",
+      "signAndEditExecutable": false
+    }
+  }
+}

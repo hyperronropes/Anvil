@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Anvil</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", Inter, system-ui, sans-serif;
+      background: #141414;
+      color: #ccc;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      user-select: none;
+      -webkit-app-region: drag;
+    }
+    .glow {
+      position: absolute;
+      width: 320px;
+      height: 320px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(232, 130, 90, 0.35), rgba(232, 130, 90, 0.08) 45%, transparent 72%);
+      top: 16%;
+      pointer-events: none;
+      animation: glowPulse 4s ease-in-out infinite;
+    }
+    .logo-wrap {
+      position: relative;
+      z-index: 1;
+      margin-bottom: 24px;
+    }
+    .logo-wrap img {
+      width: 96px;
+      height: 96px;
+      object-fit: contain;
+      display: block;
+      border-radius: 16px;
+      animation: pulse 2.4s ease-in-out infinite;
+    }
+    h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #e8e8e8;
+      margin-bottom: 4px;
+    }
+    .tag {
+      font-size: 10px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: #666;
+      margin-bottom: 20px;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: #9d9d9d;
+      margin-bottom: 14px;
+      min-height: 20px;
+    }
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(232, 130, 90, 0.25);
+      border-top-color: #e8825a;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    .track {
+      width: 220px;
+      height: 4px;
+      background: #2a2a2a;
+      border-radius: 99px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+    .fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 99px;
+      background: linear-gradient(90deg, #c86a42, #e8825a, #f09872);
+      background-size: 200% 100%;
+      animation: shimmer 1.6s linear infinite;
+      transition: width 0.3s ease;
+    }
+    .pct {
+      font-family: Consolas, monospace;
+      font-size: 10px;
+      color: #555;
+      margin-bottom: 28px;
+    }
+    .fact-card {
+      width: min(340px, 88vw);
+      padding: 14px 16px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-left: 3px solid #e8825a;
+      background: #252628;
+      -webkit-app-region: no-drag;
+    }
+    .fact-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #e8825a;
+      margin-bottom: 8px;
+    }
+    .fact-text {
+      font-size: 12px;
+      line-height: 1.55;
+      color: #b5bac1;
+      min-height: 3em;
+      opacity: 1;
+      transition: opacity 0.3s;
+    }
+    .fact-text.fade { opacity: 0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes glowPulse {
+      0%, 100% { opacity: 0.55; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.08); }
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(232,130,90,0.35)) drop-shadow(0 0 24px rgba(232,130,90,0.2)); }
+      50% { transform: scale(1.04); filter: drop-shadow(0 0 18px rgba(232,130,90,0.65)) drop-shadow(0 0 36px rgba(232,130,90,0.35)); }
+    }
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div class="logo-wrap"><img src="../assets/logo.png" alt="Anvil" /></div>
+  <h1>Anvil</h1>
+  <div class="tag">AI coding workspace</div>
+  <div class="status"><div class="spinner"></div><span id="phase">Starting up…</span></div>
+  <div class="track"><div class="fill" id="bar"></div></div>
+  <div class="pct" id="pct">0%</div>
+  <div class="fact-card">
+    <div class="fact-label">Did you know?</div>
+    <div class="fact-text" id="fact"></div>
+  </div>
+  <script>
+    const PHASES = [
+      "Forging the anvil…",
+      "Starting Python bridge…",
+      "Loading agent stack…",
+      "Almost ready…",
+    ];
+    const FACTS = [
+      "Anvil loads a full Python agent runtime on first boot — worth the wait.",
+      "Edit MCP servers in %USERPROFILE%\\.Anvil\\mcp\\mcp_config.json",
+      "Ctrl+Shift+L starts a fresh chat. Ctrl+K searches history.",
+      "Turn on Agent mode to let Anvil edit files and run tools.",
+      "Warm orange accents on a dark workspace — built for long coding sessions.",
+      "The first computer bug was a real moth in a relay, taped to the log in 1947.",
+    ];
+    const t0 = Date.now();
+    let fi = Math.floor(Math.random() * FACTS.length);
+    const factEl = document.getElementById("fact");
+    const bar = document.getElementById("bar");
+    const pct = document.getElementById("pct");
+    const phase = document.getElementById("phase");
+    factEl.textContent = FACTS[fi];
+    setInterval(() => {
+      factEl.classList.add("fade");
+      setTimeout(() => {
+        fi = (fi + 1) % FACTS.length;
+        factEl.textContent = FACTS[fi];
+        factEl.classList.remove("fade");
+      }, 300);
+    }, 4500);
+    setInterval(() => {
+      const s = (Date.now() - t0) / 1000;
+      const p = Math.min(94, 94 * (1 - Math.exp(-s / 5)));
+      bar.style.width = p + "%";
+      pct.textContent = Math.round(p) + "%";
+      phase.textContent = PHASES[Math.min(PHASES.length - 1, Math.floor(s / 2.2))];
+    }, 80);
+  </script>
+</body>
+</html>

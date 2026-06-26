@@ -1,0 +1,38 @@
+__pycache__/
+*.pyc
+*.egg-info/
+_deepcode_debug.log
+_anvil_debug.log
+*.log
+
+# scratch / test output dirs
+test3/
+test4/
+testing2/
+testing_run/
+
+# runtime state — never commit personal usage
+.deepcodev3/
+.Anvil/
+
+# python build artifacts
+anvil/build/
+anvil/src/*.egg-info/
+*.egg-info/
+
+# build artifacts — final exes (dist/) + all intermediates
+/dist/
+/build/_work/
+/build/_pydist/
+app/release/
+app/dist/
+app/node_modules/
+node_modules/
+
+# vendored reference clone of Claude Code (not part of this project)
+claude-code-main/
+claude-code-main.zip
+
+.claude
+CLAUDE.md
+deepcodev3/docs
