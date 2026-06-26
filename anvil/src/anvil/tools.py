@@ -548,6 +548,26 @@ def web_fetch(url: str, prompt: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# browser_open
+# ---------------------------------------------------------------------------
+
+def browser_open(url: str) -> str:
+    """Open a URL in the user's default system browser (lightweight automation)."""
+    import webbrowser
+
+    u = (url or "").strip()
+    if not u:
+        raise ToolError("url is required")
+    if not u.startswith(("http://", "https://")):
+        u = "https://" + u
+    try:
+        webbrowser.open(u)
+    except Exception as e:
+        raise ToolError(f"Could not open browser: {e}")
+    return f"Opened {u} in the default system browser. For automated browsing (click/type/forms), enable Browser automation in Settings → MCP (Playwright MCP)."
+
+
+# ---------------------------------------------------------------------------
 # todo_write
 # ---------------------------------------------------------------------------
 
@@ -615,6 +635,7 @@ TOOL_REGISTRY = {
     "kill_bash":    lambda args: kill_bash(args["bg_id"]),
     "list_dir":     lambda args: list_dir(args.get("path", ".")),
     "web_fetch":    lambda args: web_fetch(args["url"], args["prompt"]),
+    "browser_open": lambda args: browser_open(args["url"]),
     "todo_write":   lambda args: todo_write(args["todos"]),
 }
 
@@ -630,6 +651,7 @@ TOOL_DESCRIPTIONS = {
     "kill_bash":    "Kill a background command",
     "list_dir":     "List directory contents",
     "web_fetch":    "Fetch a URL and extract text",
+    "browser_open": "Open a URL in the default system browser",
     "todo_write":   "Update the session todo checklist",
 }
 
@@ -637,4 +659,4 @@ TOOL_DESCRIPTIONS = {
 READ_TOOLS = {"read_file", "glob_files", "grep_search", "list_dir", "bash_output", "todo_write"}
 WRITE_TOOLS = {"write_file", "append_file", "edit_file"}
 EXEC_TOOLS = {"run_command", "kill_bash"}
-NETWORK_TOOLS = {"web_fetch"}
+NETWORK_TOOLS = {"web_fetch", "browser_open"}

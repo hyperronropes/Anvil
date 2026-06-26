@@ -60,6 +60,10 @@ Usage: <tool>{"name": "list_dir", "args": {"path": "."}}</tool>
 web_fetch(url, prompt) - Fetch a URL and extract its text content. "prompt" is a hint about what you're looking for.
 Usage: <tool>{"name": "web_fetch", "args": {"url": "https://example.com", "prompt": "find the API rate limits"}}</tool>
 
+browser_open(url) - Open a URL in the user's default system browser (shows the page to the user; does not automate).
+For automated browsing (click, type, forms, JS sites), use Playwright MCP tools from Settings → MCP → Browser automation.
+Usage: <tool>{"name": "browser_open", "args": {"url": "https://example.com"}}</tool>
+
 todo_write(todos) - Replace the session todo checklist. Each item: {"content": str, "status": "pending"|"in_progress"|"completed"}. At most one "in_progress" at a time.
 Usage: <tool>{"name": "todo_write", "args": {"todos": [{"content": "Read config.py", "status": "completed"}, {"content": "Add new endpoint", "status": "in_progress"}, {"content": "Write tests", "status": "pending"}]}}</tool>
 

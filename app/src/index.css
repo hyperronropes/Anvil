@@ -221,6 +221,17 @@ body.anvil-resizing * {
     border-color: color-mix(in srgb, var(--accent) 35%, transparent);
     background: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
   }
+  .composer-chip-ultra {
+    @apply pointer-events-none text-accent;
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
+  }
+  .composer-menu-pill {
+    @apply rounded-md border border-border px-2 py-0.5 text-[11px] font-medium text-muted transition-colors hover:bg-elevated hover:text-ink;
+  }
+  .composer-menu-pill-active {
+    @apply border-[color-mix(in_srgb,var(--accent)_35%,transparent)] bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-accent;
+  }
   .composer-menu-divider {
     margin: 4px 0;
     border-top: 1px solid var(--embed-border);
@@ -273,6 +284,57 @@ body.anvil-resizing * {
   }
   .anvil-send-btn {
     @apply rounded-lg bg-accent text-white transition-transform hover:brightness-110 active:scale-95;
+  }
+  .composer-icon-btn {
+    @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-secondary transition-colors hover:bg-elevated hover:text-ink disabled:opacity-30;
+  }
+  .attachment-chips {
+    @apply flex flex-wrap gap-1.5;
+  }
+  .attachment-chip {
+    @apply inline-flex max-w-[200px] items-center gap-1 rounded-md border border-border bg-elevated px-1.5 py-1 text-[11px] text-muted;
+  }
+  .attachment-chip-thumb {
+    @apply h-6 w-6 shrink-0 rounded object-cover;
+  }
+  .attachment-chip-icon {
+    @apply shrink-0 text-[10px];
+  }
+  .attachment-chip-name {
+    @apply min-w-0 truncate;
+  }
+  .attachment-chip-remove {
+    @apply shrink-0 rounded px-0.5 text-faint hover:bg-surface hover:text-ink;
+  }
+  .attachment-sent-chip {
+    @apply inline-flex items-center rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px];
+  }
+  .slash-palette {
+    @apply absolute bottom-full left-0 right-0 z-50 mb-1.5 overflow-hidden rounded-lg border border-border bg-elevated shadow-panel;
+  }
+  .slash-palette-section {
+    @apply py-1;
+  }
+  .slash-palette-header {
+    @apply px-3 pb-1 pt-1.5 text-[11px] font-medium text-muted;
+  }
+  .slash-palette-item {
+    @apply flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors hover:bg-surface;
+  }
+  .slash-palette-item-active {
+    @apply bg-surface;
+  }
+  .slash-palette-cmd {
+    @apply font-mono text-[13px] text-ink;
+  }
+  .slash-palette-desc {
+    @apply line-clamp-2 text-[11px] leading-snug text-faint;
+  }
+  .slash-palette-more {
+    @apply w-full border-t border-border px-3 py-2 text-left text-[11px] text-muted hover:bg-surface hover:text-ink;
+  }
+  .slash-palette-empty {
+    @apply px-3 py-3 text-[11px] text-faint;
   }
   .titlebar-menu {
     @apply text-secondary hover:bg-elevated hover:text-ink;

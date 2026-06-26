@@ -48,6 +48,19 @@ def get_tools_prompt() -> str:
     if not _tools:
         return ""
     lines = ["\n# MCP tools (connected external servers)\n"]
+    has_playwright = any(
+        t.server == "playwright" or t.tool.startswith("browser_")
+        for t in _tools.values()
+    )
+    if has_playwright:
+        lines.append(
+            "# Browser automation (Playwright MCP)\n"
+            "You can browse the web like a human: open pages, click, type, scroll, take screenshots, read accessibility snapshots.\n"
+            "Typical flow: mcp__playwright__browser_navigate → mcp__playwright__browser_snapshot → "
+            "mcp__playwright__browser_click / browser_type → repeat until done.\n"
+            "Use browser_snapshot to find element refs before clicking. Use browser_take_screenshot when you need visual proof.\n"
+            "Prefer Playwright MCP over web_fetch for JS-heavy sites, logins, forms, and interactive flows.\n"
+        )
     for t in _tools.values():
         desc = (t.description or t.tool).strip().replace("\n", " ")
         lines.append(f"{t.qualified_name}(...) — {desc}")

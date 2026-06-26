@@ -122,6 +122,8 @@ def _subject_for(tool_name: str, args: dict) -> str:
         return str(args.get("command", args.get("bg_id", "")))
     if tool_name == "web_fetch":
         return args.get("url", "")
+    if tool_name == "browser_open":
+        return args.get("url", "")
     if tool_name == "list_dir":
         return _normalize_path(args.get("path", "."))
     if tool_name == "glob_files":
@@ -169,7 +171,7 @@ def _derive_always_pattern(tool_name: str, subject: str) -> str:
     if tool_name in ("run_command", "kill_bash"):
         first_token = subject.strip().split(" ")[0] if subject.strip() else "*"
         return f"{first_token} *"
-    if tool_name == "web_fetch":
+    if tool_name in ("web_fetch", "browser_open"):
         try:
             parsed = urlparse(subject)
             return f"{parsed.scheme}://{parsed.netloc}/*"
@@ -238,6 +240,8 @@ def _format_args(tool_name: str, args: dict) -> str:
     if tool_name == "grep_search":
         return f"'{args.get('pattern','')}' in {args.get('path','.')}"
     if tool_name == "web_fetch":
+        return args.get("url", "")
+    if tool_name == "browser_open":
         return args.get("url", "")
     return str(args)[:120]
 

@@ -382,6 +382,38 @@ async def roblox_mcp_install_endpoint(body: dict | None = None):
         return {"ok": False, "error": str(e)}
 
 
+@app.get("/api/mcp/browser")
+async def browser_mcp_status():
+    from anvil.browser_mcp_install import status
+
+    st = status()
+    servers = mcp_client.list_status()
+    pw = next((s for s in servers if s.get("name") == st["serverName"]), None)
+    st["mcpConnected"] = bool(pw and pw.get("status") == "connected")
+    st["mcpStatus"] = pw or None
+    st["mcpToolCount"] = len(pw.get("tools") or []) if pw else 0
+    return st
+
+
+@app.post("/api/mcp/browser/install")
+async def browser_mcp_install_endpoint(body: dict | None = None):
+    import asyncio
+    from anvil.browser_mcp_install import install
+
+    force = bool((body or {}).get("force"))
+    try:
+        result = await asyncio.to_thread(install, force=force)
+        await mcp_client.reload()
+        result["servers"] = mcp_client.list_status()
+        pw = next((s for s in result["servers"] if s.get("name") == "playwright"), None)
+        result["mcpConnected"] = bool(pw and pw.get("status") == "connected")
+        result["mcpToolCount"] = len(pw.get("tools") or []) if pw else 0
+        result["ok"] = True
+        return result
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.get("/api/skills")
 async def get_skills():
     from anvil import skills
@@ -522,24 +554,26 @@ class _Session:
             permissions.set_mode(permissions.MODE_AUTO)
 
         self.store.setdefault("messages", []).append(
-            {"role": "user", "content": text, "model": self.model_id})
+            {"role": "user", "content": text, "model": self.model_id,
+             "attachments": opts.get("attachments") or []})
 
         drainer = asyncio.ensure_future(self._drain())
         try:
             from anvil import agent
+            from anvil.attachments import merge_attachments
 
-            effective = text
+            effective, _ = merge_attachments(text, opts.get("attachments"))
             # optional reasoning pre-pass (mirrors the terminal's reasoning mode)
             if reasoning_level and reasoning_level != "off":
                 self.emit({"type": "reasoning", "level": reasoning_level})
                 from anvil import reasoning
                 from anvil.agent import effective_system_prompt
                 plan = await reasoning.run_reasoning(
-                    text, self.model_id, reasoning_level,
+                    effective, self.model_id, reasoning_level,
                     effective_system_prompt(self.soul_md), memory_block="", quiet=True,
                     on_event=self.emit)
                 if plan:
-                    effective = f"{text}\n\n[Your private reasoning/plan:\n{plan}\n]"
+                    effective = f"{effective}\n\n[Your private reasoning/plan:\n{plan}\n]"
 
             from anvil.chat import _parse_quiz, DEFAULT_QUIZ_MAX
 
@@ -632,6 +666,12 @@ class _Session:
         every worker/group/leader call, we reuse that same live object and
         poll it, same as the TUI does."""
         model_id = opts.get("model") or self.model_id
+        agent_count = opts.get("agents")
+        if agent_count is not None:
+            try:
+                agent_count = max(1, min(int(agent_count), 1000))
+            except (TypeError, ValueError):
+                agent_count = None
         permissions.set_mode(permissions.MODE_AUTO)  # swarm workers always auto-allow (see agent.py note)
 
         from anvil.ultracode import UltraCodeOrchestrator, SwarmState, ACTIVE_SWARMS
@@ -695,6 +735,7 @@ class _Session:
                 project_md=self.project_md,
                 project_memory_md=self.project_memory_md,
                 swarm_state=swarm_state,
+                agent_count=agent_count,
             )
             results = await orchestrator.run()
             summary = orchestrator.synthesize(results)
@@ -747,8 +788,11 @@ async def ws_endpoint(ws: WebSocket):
                 # turn arrives on this same socket while the turn is still
                 # running, so the receive loop must stay free to read it
                 # rather than being blocked inside run_turn.
+                opts = dict(msg.get("opts") or {})
+                if msg.get("attachments"):
+                    opts["attachments"] = msg.get("attachments")
                 session.task = asyncio.ensure_future(
-                    session.run_turn(msg.get("text", ""), msg.get("opts", {})))
+                    session.run_turn(msg.get("text", ""), opts))
             elif mtype == "stop":
                 session.stop()
                 session.stop_ultracode()

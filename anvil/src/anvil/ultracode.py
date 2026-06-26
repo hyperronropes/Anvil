@@ -195,9 +195,7 @@ into a flat list of groups that form a DAG (directed acyclic graph). Each group 
 "manager + team" unit that works on one domain of the task.
 
 RULES:
-- YOU decide how many total agents this task needs (1-{max_agents}). Small/focused tasks \
-might need just 1-5 agents total; large builds might need 50-200+. Don't over-provision — \
-pick the smallest swarm that can do the job well. Set "total_agents" in your output to your choice.
+{size_rule}
 - Each group has at most {max_children} workers
 - If a group is too large (>100 workers needed), set depth=1 so it spawns sub-groups recursively
 - depends_on lists the group IDs that must finish before this group starts
@@ -264,6 +262,66 @@ Output ONLY valid JSON, no markdown fences:
 """
 
 
+SIZE_RULE_AUTO = """\
+- YOU decide how many total agents this task needs (1-{max_agents}). Small/focused tasks \
+might need just 1-5 agents total; large builds might need 50-200+. Don't over-provision — \
+pick the smallest swarm that can do the job well. Set "total_agents" in your output to your choice."""
+
+SIZE_RULE_FIXED = """\
+- SWARM SIZE (MANDATORY): The user configured exactly {agent_count} worker agents (same model). \
+The sum of every group's "size" field MUST equal {agent_count}. Set "total_agents" to {agent_count}. \
+Split work across groups as the task requires, but total workers must be exactly {agent_count}."""
+
+
+def enforce_worker_count(
+    plans: list[GroupPlan], target: int, master_goal: str = "",
+) -> list[GroupPlan]:
+    """Adjust group worker counts so sum(size) == target."""
+    from dataclasses import replace
+
+    target = max(1, min(int(target), MAX_AGENTS))
+    if not plans:
+        goal = master_goal.strip() or "Complete the master task"
+        return [GroupPlan(
+            id="G1",
+            role="implementation",
+            goal=goal,
+            depends_on=[],
+            size=target,
+            depth=0,
+            artifact_name="output",
+            allowed_files=[],
+            reasoning="off",
+        )]
+
+    plans = [replace(p) for p in plans]
+    current = sum(p.size for p in plans)
+    if current == target:
+        return plans
+
+    if current < target:
+        extra = target - current
+        idx = 0
+        guard = 0
+        while extra > 0 and guard < target * len(plans) + 20:
+            i = idx % len(plans)
+            p = plans[i]
+            if p.size < MAX_CHILDREN:
+                plans[i] = replace(p, size=p.size + 1)
+                extra -= 1
+            idx += 1
+            guard += 1
+        return plans
+
+    while current > target:
+        best_i = max(range(len(plans)), key=lambda i: plans[i].size)
+        if plans[best_i].size <= 1:
+            break
+        plans[best_i] = replace(plans[best_i], size=plans[best_i].size - 1)
+        current -= 1
+    return plans
+
+
 async def _call_llm(prompt: str, model_id: str) -> str:
     """Stream a complete response from the LLM."""
     result = ""
@@ -277,8 +335,9 @@ async def _call_llm(prompt: str, model_id: str) -> str:
 
 async def run_leader(task: str, model_id: str,
                      context: str, memory_md: str, user_md: str,
-                     project_md: str) -> tuple[list[GroupPlan], int]:
-    """Ask leader LLM to produce a DAG plan. Returns (plans, total_agents chosen by leader)."""
+                     project_md: str,
+                     agent_count: int | None = None) -> tuple[list[GroupPlan], int]:
+    """Ask leader LLM to produce a DAG plan. Returns (plans, total_agents)."""
     ctx_block = ""
     if project_md:
         ctx_block += f"\n[ANVIL.md]\n{project_md}\n"
@@ -288,8 +347,15 @@ async def run_leader(task: str, model_id: str,
         ctx_block += f"\n[User]\n{user_md}\n"
     ctx_block += context
 
+    fixed_count = None
+    if agent_count is not None:
+        fixed_count = max(1, min(int(agent_count), MAX_AGENTS))
+        size_rule = SIZE_RULE_FIXED.format(agent_count=fixed_count)
+    else:
+        size_rule = SIZE_RULE_AUTO.format(max_agents=MAX_AGENTS)
+
     prompt = LEADER_PROMPT.format(
-        max_agents=MAX_AGENTS,
+        size_rule=size_rule,
         max_children=MAX_CHILDREN,
         context=ctx_block[:10000],
         task=task,
@@ -334,8 +400,12 @@ async def run_leader(task: str, model_id: str,
             reasoning=reasoning,
         ))
 
-    total_agents = int(data.get("total_agents", sum(p.size for p in plans) or 1))
-    total_agents = max(1, min(total_agents, MAX_AGENTS))
+    if fixed_count is not None:
+        total_agents = fixed_count
+    else:
+        total_agents = int(data.get("total_agents", sum(p.size for p in plans) or 1))
+        total_agents = max(1, min(total_agents, MAX_AGENTS))
+    plans = enforce_worker_count(plans, total_agents, task)
     return plans, total_agents
 
 
@@ -865,9 +935,15 @@ class UltraCodeOrchestrator:
         _parent_context: str = "",
         _parent_semaphore: Optional[asyncio.Semaphore] = None,
         swarm_state: Optional["SwarmState"] = None,
+        agent_count: int | None = None,
     ):
         self.task = task
-        self.total_agents = DEFAULT_AGENTS  # updated once leader decides
+        self.agent_count = agent_count
+        self.total_agents = (
+            max(1, min(int(agent_count), MAX_AGENTS))
+            if agent_count is not None
+            else DEFAULT_AGENTS
+        )
         self.model_id = model_id
         self.memory_md = memory_md
         self.user_md = user_md
@@ -882,11 +958,15 @@ class UltraCodeOrchestrator:
         plans, total_agents = await run_leader(
             self.task, self.model_id,
             self._context, self.memory_md, self.user_md, self.project_md,
+            agent_count=self.agent_count,
         )
         self.total_agents = total_agents
         if self._semaphore is None:
             self._semaphore = asyncio.Semaphore(max(1, total_agents))
-        renderer.print_info(f"[ultracode] Leader chose {total_agents} agents")
+        if self.agent_count is not None:
+            renderer.print_info(f"[ultracode] Using {total_agents} agents (user setting)")
+        else:
+            renderer.print_info(f"[ultracode] Leader chose {total_agents} agents")
         if self.swarm_state is not None:
             self.swarm_state.task = self.task
             self.swarm_state.plans = plans

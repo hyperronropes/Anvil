@@ -9,9 +9,9 @@
       ],
       "disabled": true
     },
-    "fetch-example": {
+    "playwright-example": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-fetch"],
+      "args": ["-y", "@playwright/mcp@latest"],
       "disabled": true
     }
   }

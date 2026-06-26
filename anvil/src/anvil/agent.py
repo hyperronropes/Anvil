@@ -259,7 +259,7 @@ def _format_call_args(tool_name: str, args: dict) -> str:
         return str(args.get("command", args.get("bg_id", "")))[:100]
     if tool_name == "grep_search":
         return f"{args.get('pattern','')!r} in {args.get('path','.')}"
-    if tool_name == "web_fetch":
+    if tool_name in ("web_fetch", "browser_open"):
         return args.get("url", "")
     if tool_name == "bash_output":
         return str(args.get("bg_id", ""))

@@ -1,13 +1,17 @@
-Anvil — source code (GPL-3.0)
-
-This program is free software. Full source is available so you can verify
-and build it yourself.
-
-  Anvil (this fork):  https://github.com/hyperronropes/Anvil
-  Upstream (DeepCode): https://github.com/Schnickenpick/DeepCodev3
-
-Community help (DeepCode Discord, shared by forks):  https://discord.gg/8WU56Drt7F
-
-Clone the Anvil repo and run:  python build_all.py
-
-LICENSE is included in this folder.
+Anvil — source code (GPL-3.0)
+
+This program is free software. Full source is available so you can verify
+and build it yourself.
+
+This fork was built and maintained largely with AI-assisted development.
+
+  Anvil (this fork):  https://github.com/hyperronropes/Anvil
+  Upstream (DeepCode): https://github.com/Schnickenpick/DeepCodev3
+
+Questions (not official Anvil support):  https://discord.gg/8WU56Drt7F
+  DeepCode Discord — shared community; ask if you want, no guarantee of help.
+
+Clone the Anvil repo and run:  python build_all.py
+
+LICENSE is included in this folder.
+

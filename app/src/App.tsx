@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, useCallback, type ReactNode, type RefObject, type ComponentProps } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, type ReactNode, type RefObject, type ComponentProps } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import logoUrl from "../assets/logo.png";
@@ -34,13 +34,27 @@ type PermissionRequest = { id: string; name: string; args: Record<string, unknow
 type QuizRequest = { id: string; question: string; options: string[] };
 
 type ToolCard = { name: string; args: Record<string, unknown>; ok?: boolean };
+type ChatAttachment = {
+  id: string;
+  name: string;
+  path: string;
+  kind: "image" | "text" | "binary";
+  mime?: string;
+  dataUrl?: string;
+  size: number;
+};
 type Msg =
-  | { role: "user"; text: string }
+  | { role: "user"; text: string; attachments?: ChatAttachment[] }
   | { role: "assistant"; text: string; tools: ToolCard[]; streaming: boolean };
 
 type ModelInfo = { id: string; name: string; provider: string; tier: string };
 type SessionMeta = { id: string; title: string; model: string; created: string; count: number; snippet?: string };
-type StoredSession = { id: string; title?: string; model?: string; messages: { role: string; content: string }[] };
+type StoredSession = {
+  id: string;
+  title?: string;
+  model?: string;
+  messages: { role: string; content: string; attachments?: ChatAttachment[] }[];
+};
 
 type McpServerStatus = {
   name: string;
@@ -70,6 +84,23 @@ type RobloxMcpStatus = {
   dashboardUrl: string;
   serverName: string;
   mcpConnected?: boolean;
+  mcpStatus?: McpServerStatus | null;
+};
+
+type BrowserMcpStatus = {
+  installed: boolean;
+  browsersReady: boolean;
+  browsersDir: string;
+  nodeAvailable?: boolean;
+  nodeOnPath?: boolean;
+  bundledNode?: boolean;
+  canAutoDownloadNode?: boolean;
+  nodeVersion?: string;
+  nodeError?: string;
+  serverName: string;
+  mcpPackage?: string;
+  mcpConnected?: boolean;
+  mcpToolCount?: number;
   mcpStatus?: McpServerStatus | null;
 };
 
@@ -161,6 +192,10 @@ const CHAT_WIDTH_MAX = 720;
 const EXPLORER_WIDTH_MIN = 180;
 const EXPLORER_WIDTH_MAX = 520;
 const MODELS_POLL_MS = 30_000;
+const ULTRACODE_KEY = "anvil.ultracode";
+const ULTRACODE_AGENTS_KEY = "anvil.ultracodeAgents";
+const ULTRACODE_AGENTS_DEFAULT = 50;
+const ULTRACODE_AGENT_PRESETS = [10, 25, 50, 100, 200] as const;
 
 function loadStoredWidth(key: string, fallback: number, min: number, max: number): number {
   try {
@@ -181,6 +216,135 @@ const AGENT_MODES: { id: AgentMode; label: string; hint: string }[] = [
 ];
 
 const REASONING_LEVELS = ["off", "low", "middle", "high", "ultra"];
+
+type SlashCommand = { slash: string; label: string; description: string; suffix: string };
+
+const SLASH_COMMANDS: SlashCommand[] = [];
+
+type SlashMatch = { query: string; from: number; to: number };
+
+function matchSlash(input: string, caret: number): SlashMatch | null {
+  const head = input.slice(0, caret);
+  const m = head.match(/(^|\s)(\/[^\s]*)$/);
+  if (!m?.[2]) return null;
+  const token = m[2];
+  return { query: token.slice(1).toLowerCase(), from: caret - token.length, to: caret };
+}
+
+function filterSlashCommands(query: string): SlashCommand[] {
+  if (!query) return SLASH_COMMANDS;
+  return SLASH_COMMANDS.filter(
+    (c) => c.label.startsWith(query) || c.slash.slice(1).startsWith(query),
+  );
+}
+
+type SlashPaletteItem = {
+  kind: "skill" | "command";
+  slash: string;
+  description: string;
+  suffix: string;
+};
+
+function skillFolderName(skill: SkillInfo): string {
+  return skill.id.includes(":") ? skill.id.split(":").pop()! : skill.id;
+}
+
+function buildSlashPaletteItems(skills: SkillInfo[], query: string): SlashPaletteItem[] {
+  const q = query.toLowerCase();
+  const cmdItems: SlashPaletteItem[] = filterSlashCommands(query).map((c) => ({
+    kind: "command" as const,
+    slash: c.slash,
+    description: c.description,
+    suffix: c.suffix,
+  }));
+  // Skills only appear after 2+ chars; `/` alone shows nothing unless commands exist.
+  const skillItems: SlashPaletteItem[] =
+    q.length < 2
+      ? []
+      : skills
+          .filter((s) => s.enabled)
+          .filter((s) => {
+            const folder = skillFolderName(s).toLowerCase();
+            return (
+              folder.startsWith(q)
+              || s.name.toLowerCase().includes(q)
+              || s.description.toLowerCase().includes(q)
+            );
+          })
+          .map((s) => ({
+            kind: "skill" as const,
+            slash: `/${skillFolderName(s)}`,
+            description: s.description || s.name,
+            suffix: " ",
+          }));
+  return [...cmdItems, ...skillItems];
+}
+
+const SLASH_PALETTE_MAX_H = "max-h-[min(280px,40vh)]";
+
+function SlashCommandPalette({
+  items,
+  selectedIndex,
+  onSelect,
+  onHover,
+}: {
+  items: SlashPaletteItem[];
+  selectedIndex: number;
+  onSelect: (item: SlashPaletteItem) => void;
+  onHover: (index: number) => void;
+}) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const cmdItems = items.filter((i) => i.kind === "command");
+  const skillItems = items.filter((i) => i.kind === "skill");
+
+  useEffect(() => {
+    const el = listRef.current?.querySelector(`[data-slash-idx="${selectedIndex}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [selectedIndex]);
+
+  const renderItem = (item: SlashPaletteItem, index: number) => (
+    <button
+      key={`${item.kind}-${item.slash}`}
+      type="button"
+      data-slash-idx={index}
+      className={`slash-palette-item ${index === selectedIndex ? "slash-palette-item-active" : ""}`}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => onSelect(item)}
+      onMouseEnter={() => onHover(index)}
+    >
+      <span className="slash-palette-cmd">{item.slash}</span>
+      <span className="slash-palette-desc">{item.description}</span>
+    </button>
+  );
+
+  let flatIndex = 0;
+
+  return (
+    <div ref={listRef} className={`slash-palette animate-slide-up ${SLASH_PALETTE_MAX_H} overflow-y-auto`}>
+      {cmdItems.length > 0 && (
+        <div className="slash-palette-section">
+          <div className="slash-palette-header">Commands</div>
+          {cmdItems.map((item) => {
+            const idx = flatIndex++;
+            return renderItem(item, idx);
+          })}
+        </div>
+      )}
+      {skillItems.length > 0 && (
+        <div className="slash-palette-section">
+          <div className="slash-palette-header">Skills</div>
+          {skillItems.map((item) => {
+            const idx = flatIndex++;
+            return renderItem(item, idx);
+          })}
+        </div>
+      )}
+      {items.length === 0 && (
+        <div className="slash-palette-empty">No matching commands</div>
+      )}
+    </div>
+  );
+}
 
 function loadExplorerOpen(): boolean {
   try {
@@ -226,6 +390,14 @@ export default function App() {
   // toggles — Agent defaults OFF
   const [agentMode, setAgentMode] = useState<"off" | "ask" | "auto">("off");
   const [reasoning, setReasoning] = useState("off");
+  const [ultracodeMode, setUltracodeMode] = useState(
+    () => localStorage.getItem(ULTRACODE_KEY) === "1",
+  );
+  const [ultracodeAgents, setUltracodeAgents] = useState(() => {
+    const v = parseInt(localStorage.getItem(ULTRACODE_AGENTS_KEY) ?? "", 10);
+    if (!Number.isNaN(v) && v >= 1) return Math.min(1000, v);
+    return ULTRACODE_AGENTS_DEFAULT;
+  });
   const [permRequest, setPermRequest] = useState<PermissionRequest | null>(null);
   const permQueueRef = useRef<PermissionRequest[]>([]);
   const [quizRequest, setQuizRequest] = useState<QuizRequest | null>(null);
@@ -237,14 +409,15 @@ export default function App() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [cmdOpen, setCmdOpen] = useState(false);
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [ultracode, setUltracode] = useState<UltraCodeStatus | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"general" | "prompt" | "skills" | "mcp">("general");
   const [mcpServers, setMcpServers] = useState<McpServerStatus[]>([]);
   const [mcpToolCount, setMcpToolCount] = useState(0);
+  const [chatSkills, setChatSkills] = useState<SkillInfo[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -290,6 +463,15 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ULTRACODE_KEY, ultracodeMode ? "1" : "0");
+      localStorage.setItem(ULTRACODE_AGENTS_KEY, String(ultracodeAgents));
+    } catch {
+      /* ignore */
+    }
+  }, [ultracodeMode, ultracodeAgents]);
 
   useEffect(() => {
     try {
@@ -574,6 +756,14 @@ export default function App() {
     if (connected) refreshMcp();
   }, [connected, refreshMcp]);
 
+  useEffect(() => {
+    if (!connected) return;
+    fetch(`${API}/api/skills`)
+      .then((r) => r.json())
+      .then((d) => setChatSkills((d.skills ?? []) as SkillInfo[]))
+      .catch(() => setChatSkills([]));
+  }, [connected, settingsOpen]);
+
   const refreshModels = useCallback(() => {
     fetch(`${API}/api/models`)
       .then((r) => r.json())
@@ -639,6 +829,16 @@ export default function App() {
     }
   };
 
+  const pickAttachments = async () => {
+    const picked = (await (window as any).anvil?.pickChatAttachments?.()) as ChatAttachment[] | undefined;
+    if (!picked?.length) return;
+    setPendingAttachments((prev) => [...prev, ...picked].slice(0, 8));
+  };
+
+  const removeAttachment = (id: string) => {
+    setPendingAttachments((prev) => prev.filter((a) => a.id !== id));
+  };
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, thinking, quizRequest, permRequest]);
@@ -681,7 +881,7 @@ export default function App() {
           .filter((m) => m.role === "user" || m.role === "assistant")
           .map((m) =>
             m.role === "user"
-              ? { role: "user", text: m.content }
+              ? { role: "user", text: m.content, attachments: m.attachments }
               : { role: "assistant", text: m.content, tools: [], streaming: false }
           )
       );
@@ -774,7 +974,8 @@ export default function App() {
 
   const send = () => {
     const text = input.trim();
-    if (!text || !connected) return;
+    const attachments = pendingAttachments;
+    if ((!text && !attachments.length) || !connected) return;
     if (!apiUp) {
       setMessages((m) => [
         ...m,
@@ -801,12 +1002,13 @@ export default function App() {
       return;
     }
     if (busy) return;
-    if (text.startsWith("/ultracode ")) {
-      runUltracode(text.slice("/ultracode ".length).trim());
+    if (ultracodeMode && text.trim()) {
+      runUltracode(text.trim());
       return;
     }
-    setMessages((m) => [...m, { role: "user", text }]);
+    setMessages((m) => [...m, { role: "user", text: text || "(attachments)", attachments: attachments.length ? attachments : undefined }]);
     setInput("");
+    setPendingAttachments([]);
     setBusy(true);
     setThinking(true);
     setThinkingLabel("Thinking…");
@@ -815,7 +1017,8 @@ export default function App() {
     setUltracode(null);
     wsRef.current?.send(JSON.stringify({
       type: "chat",
-      text,
+      text: text || "(see attachments)",
+      attachments: attachments.length ? attachments : undefined,
       opts: {
         model,
         reasoning,
@@ -829,12 +1032,17 @@ export default function App() {
 
   const runUltracode = (task: string) => {
     if (!task || !connected || busy) return;
-    setMessages((m) => [...m, { role: "user", text: `/ultracode ${task}` }]);
+    setMessages((m) => [...m, { role: "user", text: task }]);
     setInput("");
+    setPendingAttachments([]);
     setBusy(true);
     setThinking(false);
     setUltracode({ type: "ultracode_status", id: "", task, finished: false, failed: false, error: "", groups: [] });
-    wsRef.current?.send(JSON.stringify({ type: "ultracode", text: task, opts: { model } }));
+    wsRef.current?.send(JSON.stringify({
+      type: "ultracode",
+      text: task,
+      opts: { model, agents: ultracodeAgents },
+    }));
   };
 
   const stop = () => {
@@ -946,13 +1154,6 @@ export default function App() {
     return () => clearTimeout(t);
   }, [searchOpen, searchQuery]);
 
-  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
-  };
-
   const chatTitle = messages.length
     ? (sessions.find((s) => s.id === activeId)?.title ?? "Chat")
     : "New Chat";
@@ -989,7 +1190,6 @@ export default function App() {
         onToggleExplorer={() => setExplorerOpen((v) => !v)}
         onSettings={() => openSettings("general")}
         explorerOpen={explorerOpen}
-        mcpToolCount={mcpToolCount}
       />
 
       <div className="flex min-h-0 flex-1">
@@ -1094,12 +1294,15 @@ export default function App() {
             <AnvilComposer
               input={input}
               onInput={setInput}
-              onKeyDown={onKey}
               connected={connected}
               busy={busy}
               quizRequest={quizRequest}
               onSend={send}
               onStop={stop}
+              skills={chatSkills}
+              pendingAttachments={pendingAttachments}
+              onPickAttachments={() => void pickAttachments()}
+              onRemoveAttachment={removeAttachment}
               agentMode={agentMode}
               modeMenuOpen={modeMenuOpen}
               modelMenuOpen={modelMenuOpen}
@@ -1111,6 +1314,10 @@ export default function App() {
               onModel={setModel}
               reasoning={reasoning}
               onReasoning={setReasoning}
+              ultracodeMode={ultracodeMode}
+              onUltracodeMode={setUltracodeMode}
+              ultracodeAgents={ultracodeAgents}
+              onUltracodeAgents={setUltracodeAgents}
             />
           </div>
         </section>
@@ -1200,7 +1407,6 @@ function TitleBar({
   onToggleExplorer,
   onSettings,
   explorerOpen,
-  mcpToolCount,
 }: {
   title: string;
   projectDir: string;
@@ -1210,7 +1416,6 @@ function TitleBar({
   onToggleExplorer: () => void;
   onSettings: () => void;
   explorerOpen: boolean;
-  mcpToolCount: number;
 }) {
   const hasProject = Boolean(projectDir && title !== "Anvil");
   return (
@@ -1249,10 +1454,7 @@ function TitleBar({
           <IconPanelRight className="h-3.5 w-3.5" />
         </button>
         <button type="button" onClick={onSettings} className="titlebar-action" title="Settings">
-          <IconSettings className="h-3.5 w-3.5" />
-          {mcpToolCount > 0 && (
-            <span className="rounded bg-accent/25 px-1 text-[10px] font-medium text-accent">{mcpToolCount}</span>
-          )}
+          <IconSettings className="h-3 w-3" />
         </button>
       </div>
     </header>
@@ -1564,12 +1766,15 @@ function ChatHistoryRow({
 function AnvilComposer({
   input,
   onInput,
-  onKeyDown,
   connected,
   busy,
   quizRequest,
   onSend,
   onStop,
+  skills,
+  pendingAttachments,
+  onPickAttachments,
+  onRemoveAttachment,
   agentMode,
   modeMenuOpen,
   modelMenuOpen,
@@ -1581,15 +1786,22 @@ function AnvilComposer({
   onModel,
   reasoning,
   onReasoning,
+  ultracodeMode,
+  onUltracodeMode,
+  ultracodeAgents,
+  onUltracodeAgents,
 }: {
   input: string;
   onInput: (v: string) => void;
-  onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   connected: boolean;
   busy: boolean;
   quizRequest: QuizRequest | null;
   onSend: () => void;
   onStop: () => void;
+  skills: SkillInfo[];
+  pendingAttachments: ChatAttachment[];
+  onPickAttachments: () => void;
+  onRemoveAttachment: (id: string) => void;
   agentMode: AgentMode;
   modeMenuOpen: boolean;
   modelMenuOpen: boolean;
@@ -1601,25 +1813,136 @@ function AnvilComposer({
   onModel: (id: string) => void;
   reasoning: string;
   onReasoning: (l: string) => void;
+  ultracodeMode: boolean;
+  onUltracodeMode: (v: boolean) => void;
+  ultracodeAgents: number;
+  onUltracodeAgents: (n: number) => void;
 }) {
   const activeMode = AGENT_MODES.find((m) => m.id === agentMode) ?? AGENT_MODES[0];
   const activeModel = models.find((m) => m.id === model);
   const modeLabel = agentMode === "off" ? "Ask" : "Agent";
   const composerRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [caret, setCaret] = useState(0);
+  const [slashIndex, setSlashIndex] = useState(0);
+  const pendingCaretRef = useRef<number | null>(null);
+  const canSend = connected && (input.trim().length > 0 || pendingAttachments.length > 0);
+
+  const slashMatch = useMemo(() => matchSlash(input, caret), [input, caret]);
+  const slashItems = useMemo(
+    () => (slashMatch ? buildSlashPaletteItems(skills, slashMatch.query) : []),
+    [skills, slashMatch],
+  );
+  const slashOpen = slashMatch !== null;
+
+  useEffect(() => {
+    setSlashIndex(0);
+  }, [slashMatch?.query, slashItems.length]);
+
+  useLayoutEffect(() => {
+    if (pendingCaretRef.current !== null && textareaRef.current) {
+      const pos = pendingCaretRef.current;
+      textareaRef.current.setSelectionRange(pos, pos);
+      setCaret(pos);
+      pendingCaretRef.current = null;
+    }
+  }, [input]);
+
+  const applySlashItem = useCallback(
+    (item: SlashPaletteItem) => {
+      if (!slashMatch) return;
+      const insert = item.slash + item.suffix;
+      const next = input.slice(0, slashMatch.from) + insert + input.slice(slashMatch.to);
+      pendingCaretRef.current = slashMatch.from + insert.length;
+      onInput(next);
+      textareaRef.current?.focus();
+    },
+    [input, onInput, slashMatch],
+  );
+
+  const handleComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const pos = e.currentTarget.selectionStart;
+    setCaret(pos);
+
+    if (slashOpen && slashItems.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashIndex((i) => (i + 1) % slashItems.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashIndex((i) => (i - 1 + slashItems.length) % slashItems.length);
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+        e.preventDefault();
+        applySlashItem(slashItems[slashIndex] ?? slashItems[0]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        return;
+      }
+    }
+
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      onSend();
+    }
+  };
 
   return (
-    <div ref={composerRef} className="discord-composer">
+    <div ref={composerRef} className="relative discord-composer">
+      {slashOpen && (
+        <SlashCommandPalette
+          items={slashItems}
+          selectedIndex={slashIndex}
+          onSelect={applySlashItem}
+          onHover={setSlashIndex}
+        />
+      )}
+      {pendingAttachments.length > 0 && (
+        <div className="attachment-chips px-3 pt-2">
+          {pendingAttachments.map((a) => (
+            <span key={a.id} className="attachment-chip">
+              {a.kind === "image" && a.dataUrl ? (
+                <img src={a.dataUrl} alt="" className="attachment-chip-thumb" />
+              ) : (
+                <span className="attachment-chip-icon">📎</span>
+              )}
+              <span className="attachment-chip-name" title={a.name}>{a.name}</span>
+              <button
+                type="button"
+                className="attachment-chip-remove"
+                onClick={() => onRemoveAttachment(a.id)}
+                title="Remove"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <textarea
+        ref={textareaRef}
         value={input}
-        onChange={(e) => onInput(e.target.value)}
-        onKeyDown={onKeyDown}
+        onChange={(e) => {
+          onInput(e.target.value);
+          setCaret(e.target.selectionStart);
+        }}
+        onClick={(e) => setCaret(e.currentTarget.selectionStart)}
+        onKeyUp={(e) => setCaret(e.currentTarget.selectionStart)}
+        onKeyDown={handleComposerKeyDown}
         rows={2}
         placeholder={
           !connected
             ? "Connecting…"
             : quizRequest
               ? "Type your answer…"
-              : "What should we build?"
+              : ultracodeMode
+                ? `UltraCode swarm (${ultracodeAgents} agents) — describe what to build…`
+                : "What should we build?"
         }
         className="max-h-36 min-h-[52px] w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-[13px] leading-relaxed text-ink outline-none placeholder:text-faint"
       />
@@ -1637,9 +1960,15 @@ function AnvilComposer({
           onModel={onModel}
           reasoning={reasoning}
           onReasoning={onReasoning}
+          ultracodeMode={ultracodeMode}
+          onUltracodeMode={onUltracodeMode}
+          ultracodeAgents={ultracodeAgents}
+          onUltracodeAgents={onUltracodeAgents}
           modeLabel={modeLabel}
           activeMode={activeMode}
           activeModel={activeModel}
+          onPickAttachments={onPickAttachments}
+          busy={busy}
         />
         <div className="flex shrink-0 items-center gap-1">
           {busy && !quizRequest ? (
@@ -1650,7 +1979,7 @@ function AnvilComposer({
             <button
               type="button"
               onClick={onSend}
-              disabled={!connected || !input.trim()}
+              disabled={!canSend}
               className="anvil-send-btn flex h-8 w-8 items-center justify-center disabled:opacity-25"
               title="Send"
             >
@@ -1676,9 +2005,15 @@ function ComposerToolbar({
   onModel,
   reasoning,
   onReasoning,
+  ultracodeMode,
+  onUltracodeMode,
+  ultracodeAgents,
+  onUltracodeAgents,
   modeLabel,
   activeMode,
   activeModel,
+  onPickAttachments,
+  busy,
 }: {
   composerRef: RefObject<HTMLDivElement | null>;
   agentMode: AgentMode;
@@ -1692,9 +2027,15 @@ function ComposerToolbar({
   onModel: (id: string) => void;
   reasoning: string;
   onReasoning: (l: string) => void;
+  ultracodeMode: boolean;
+  onUltracodeMode: (v: boolean) => void;
+  ultracodeAgents: number;
+  onUltracodeAgents: (n: number) => void;
   modeLabel: string;
   activeMode: (typeof AGENT_MODES)[number];
   activeModel?: ModelInfo;
+  onPickAttachments: () => void;
+  busy: boolean;
 }) {
   const grouped = models.reduce<Record<string, ModelInfo[]>>((acc, m) => {
     const p = m.provider || "other";
@@ -1704,6 +2045,16 @@ function ComposerToolbar({
 
   return (
     <div className="relative flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+      <button
+        type="button"
+        onClick={onPickAttachments}
+        disabled={busy}
+        className="composer-icon-btn"
+        title="Attach files"
+      >
+        <IconPaperclip />
+      </button>
+
       <ModeChip
         composerRef={composerRef}
         agentMode={agentMode}
@@ -1718,7 +2069,17 @@ function ComposerToolbar({
         onAgentMode={onAgentMode}
         reasoning={reasoning}
         onReasoning={onReasoning}
+        ultracodeMode={ultracodeMode}
+        onUltracodeMode={onUltracodeMode}
+        ultracodeAgents={ultracodeAgents}
+        onUltracodeAgents={onUltracodeAgents}
       />
+
+      {ultracodeMode && (
+        <span className="composer-chip composer-chip-ultra" title={`UltraCode — ${ultracodeAgents} agents`}>
+          ⟁ {ultracodeAgents}
+        </span>
+      )}
 
       <ModelChip
         composerRef={composerRef}
@@ -1752,6 +2113,10 @@ function ModeChip({
   onAgentMode,
   reasoning,
   onReasoning,
+  ultracodeMode,
+  onUltracodeMode,
+  ultracodeAgents,
+  onUltracodeAgents,
 }: {
   composerRef: RefObject<HTMLDivElement | null>;
   agentMode: AgentMode;
@@ -1763,6 +2128,10 @@ function ModeChip({
   onAgentMode: (m: AgentMode) => void;
   reasoning: string;
   onReasoning: (l: string) => void;
+  ultracodeMode: boolean;
+  onUltracodeMode: (v: boolean) => void;
+  ultracodeAgents: number;
+  onUltracodeAgents: (n: number) => void;
 }) {
   const btnRef = useRef<HTMLButtonElement>(null);
   return (
@@ -1771,8 +2140,8 @@ function ModeChip({
         ref={btnRef}
         type="button"
         onClick={onToggle}
-        className={`composer-chip ${agentMode !== "off" ? "composer-chip-active" : ""}`}
-        title={activeMode.hint}
+        className={`composer-chip ${agentMode !== "off" || ultracodeMode ? "composer-chip-active" : ""}`}
+        title={ultracodeMode ? `UltraCode swarm (${ultracodeAgents} agents)` : activeMode.hint}
       >
         <IconAgent />
         <span>{modeLabel}</span>
@@ -1809,6 +2178,36 @@ function ModeChip({
               <span className="font-medium capitalize">{l}</span>
             </button>
           ))}
+          <div className="composer-menu-divider" />
+          <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-faint">UltraCode</div>
+          <p className="px-2 pb-1 text-[11px] leading-snug text-faint">
+            Spawn many copies of the selected model working in parallel on big tasks.
+          </p>
+          <div className="flex gap-1 px-2 pb-1">
+            {(["off", "on"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => onUltracodeMode(mode === "on")}
+                className={`composer-menu-pill ${(mode === "on") === ultracodeMode ? "composer-menu-pill-active" : ""}`}
+              >
+                {mode === "on" ? "On" : "Off"}
+              </button>
+            ))}
+          </div>
+          <div className="px-2 pb-2 text-[10px] font-medium text-faint">Agents</div>
+          <div className="flex flex-wrap gap-1 px-2 pb-2">
+            {ULTRACODE_AGENT_PRESETS.map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => onUltracodeAgents(n)}
+                className={`composer-menu-pill ${n === ultracodeAgents ? "composer-menu-pill-active" : ""}`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
         </ComposerMenu>
       )}
     </>
@@ -1991,8 +2390,26 @@ function MessageView({
   if (msg.role === "user") {
     return (
       <div className="flex justify-end animate-slide-up">
-        <div className="discord-embed discord-embed-user max-w-[88%] whitespace-pre-wrap px-3.5 py-2.5 text-[13px]">
-          {msg.text}
+        <div className="discord-embed discord-embed-user max-w-[88%] px-3.5 py-2.5 text-[13px]">
+          {msg.attachments && msg.attachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {msg.attachments.map((a) =>
+                a.kind === "image" && a.dataUrl ? (
+                  <img
+                    key={a.id}
+                    src={a.dataUrl}
+                    alt={a.name}
+                    className="max-h-40 max-w-full rounded-md border border-white/10"
+                  />
+                ) : (
+                  <span key={a.id} className="attachment-sent-chip" title={a.path}>
+                    📎 {a.name}
+                  </span>
+                )
+              )}
+            </div>
+          )}
+          {msg.text && <div className="whitespace-pre-wrap">{msg.text}</div>}
         </div>
       </div>
     );
@@ -2344,6 +2761,7 @@ function SettingsDialog({
   const [mcpExpanded, setMcpExpanded] = useState<string | null>(null);
   const [mcpBusy, setMcpBusy] = useState(false);
   const [robloxMcp, setRobloxMcp] = useState<RobloxMcpStatus | null>(null);
+  const [browserMcp, setBrowserMcp] = useState<BrowserMcpStatus | null>(null);
   const [skillsState, setSkillsState] = useState<SkillsState | null>(null);
   const [latestLogPath, setLatestLogPath] = useState("");
 
@@ -2382,6 +2800,10 @@ function SettingsDialog({
       .then((r) => r.json())
       .then((d) => setRobloxMcp(d))
       .catch(() => setRobloxMcp(null));
+    fetch(`${API}/api/mcp/browser`)
+      .then((r) => r.json())
+      .then((d) => setBrowserMcp(d))
+      .catch(() => setBrowserMcp(null));
   }, []);
 
   useEffect(() => {
@@ -2398,6 +2820,35 @@ function SettingsDialog({
       setMsg("MCP reloaded");
     } catch {
       setMsg("MCP reload failed");
+    } finally {
+      setMcpBusy(false);
+    }
+  };
+
+  const installBrowserMcp = async (force = false) => {
+    setMcpBusy(true);
+    setMsg(
+      force
+        ? "Reinstalling browser automation…"
+        : "Installing browser automation… (downloads Chromium, 2–5 min first time)",
+    );
+    try {
+      const r = await fetch(`${API}/api/mcp/browser/install`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force }),
+      });
+      const d = await r.json();
+      if (!d.ok) {
+        setMsg(d.error || "Browser automation install failed");
+        return;
+      }
+      setBrowserMcp(d);
+      if (d.mcpConfig) setMcpJson(JSON.stringify(d.mcpConfig, null, 2));
+      setMcpServers(d.servers ?? []);
+      setMsg(d.message || "Browser automation ready");
+    } catch {
+      setMsg("Browser automation install failed");
     } finally {
       setMcpBusy(false);
     }
@@ -2670,11 +3121,11 @@ function SettingsDialog({
                         </button>
                       </p>
                       <p className="text-faint">
-                        When sharing Anvil.zip, include both GitHub links. Clone the repo to build from source
-                        (<span className="font-mono">python build_all.py</span>).
+                        Built largely with AI-assisted development. When sharing Anvil.zip, include both GitHub links.
+                        Clone the repo to build from source (<span className="font-mono">python build_all.py</span>).
                       </p>
                       <p>
-                        <span className="text-secondary">Community help:</span>{" "}
+                        <span className="text-secondary">Questions (unofficial):</span>{" "}
                         <button
                           type="button"
                           className="text-accent hover:underline"
@@ -2683,7 +3134,8 @@ function SettingsDialog({
                           DeepCode Discord
                         </button>
                         <span className="text-faint">
-                          {" "}— no separate Anvil server; fork makers and users hang out there.
+                          {" "}— not official Anvil support; a shared place to ask questions, no guarantee of help.
+                          Prefer GitHub issues for bugs.
                         </span>
                       </p>
                     </div>
@@ -2827,6 +3279,82 @@ function SettingsDialog({
 
               {!loading && tab === "mcp" && (
                 <div className="flex flex-col gap-4">
+                  <SettingsField
+                    label="Browser automation (Playwright)"
+                    hint="Antigravity-style web browsing: navigate, click, type, screenshots. Installs Playwright MCP + Chromium into ~/.Anvil/tools/. Agent mode required."
+                  >
+                    <div className="discord-embed flex flex-col gap-3 px-3 py-3">
+                      <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                        {browserMcp?.installed ? (
+                          <span className="rounded bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-400">Configured</span>
+                        ) : (
+                          <span className="rounded bg-surface px-2 py-0.5 text-muted">Not installed</span>
+                        )}
+                        {browserMcp?.browsersReady ? (
+                          <span className="text-muted">Chromium ready</span>
+                        ) : (
+                          <span className="text-muted">Chromium not downloaded yet</span>
+                        )}
+                        {browserMcp?.nodeOnPath ? (
+                          <span className="text-muted">Node {browserMcp.nodeVersion || "on PATH"}</span>
+                        ) : browserMcp?.bundledNode ? (
+                          <span className="text-muted">Portable Node {browserMcp.nodeVersion || "ready"}</span>
+                        ) : browserMcp?.canAutoDownloadNode ? (
+                          <span className="text-muted">No npm — will auto-download Node on install</span>
+                        ) : (
+                          <span className="text-red-400">Install Node.js 18+ manually</span>
+                        )}
+                        {browserMcp?.mcpConnected && (
+                          <span className="rounded bg-accent/15 px-2 py-0.5 font-medium text-accent">
+                            MCP connected
+                            {browserMcp.mcpToolCount ? ` · ${browserMcp.mcpToolCount} tools` : ""}
+                          </span>
+                        )}
+                        {browserMcp?.mcpStatus?.status === "error" && (
+                          <span className="text-red-400 truncate" title={browserMcp.mcpStatus.error}>
+                            MCP error
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-muted">
+                        Once installed, ask the agent to browse sites, fill forms, test your localhost app, or scrape
+                        JS-heavy pages. It uses{" "}
+                        <span className="font-mono text-faint">browser_navigate</span>,{" "}
+                        <span className="font-mono text-faint">browser_snapshot</span>,{" "}
+                        <span className="font-mono text-faint">browser_click</span>, etc.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={mcpBusy || (!browserMcp?.nodeAvailable && !browserMcp?.canAutoDownloadNode)}
+                          onClick={() => void installBrowserMcp(false)}
+                          className="ide-btn px-3 py-1.5 text-xs"
+                        >
+                          {mcpBusy
+                            ? "Working…"
+                            : browserMcp?.installed
+                              ? "Reconnect browser MCP"
+                              : "Install browser automation"}
+                        </button>
+                        {browserMcp?.installed && (
+                          <button
+                            type="button"
+                            disabled={mcpBusy}
+                            onClick={() => void installBrowserMcp(true)}
+                            className="ide-btn-ghost px-2 py-1.5 text-xs"
+                          >
+                            Reinstall Chromium
+                          </button>
+                        )}
+                      </div>
+                      {browserMcp?.browsersDir && (
+                        <p className="font-mono text-[10px] text-faint truncate" title={browserMcp.browsersDir}>
+                          {browserMcp.browsersDir}
+                        </p>
+                      )}
+                    </div>
+                  </SettingsField>
+
                   <SettingsField
                     label="Roblox Executor MCP"
                     hint="One-click install into ~/.Anvil/roblox-executor-mcp. If Node/npm isn't installed, Anvil downloads portable Node to ~/.Anvil/tools/nodejs/ (Windows)."
@@ -3177,9 +3705,9 @@ function IconPanelRight({ className }: { className?: string }) {
 }
 function IconSettings({ className }: { className?: string }) {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" className={className}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
       <circle cx="12" cy="12" r="3" />
-      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" strokeLinecap="round" />
     </svg>
   );
 }
@@ -3212,6 +3740,14 @@ function IconSend() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
       <path d="M12 19V5M5 12l7-7 7 7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconPaperclip() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, nativeImage, shell } from "electron";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import fs from "node:fs";
@@ -560,6 +561,57 @@ ipcMain.handle("shell:openPath", (_e, targetPath) => {
 ipcMain.handle("shell:openExternal", (_e, url) => {
   if (!url || typeof url !== "string") return false;
   return shell.openExternal(url);
+});
+
+const CHAT_TEXT_EXTS = new Set([
+  "txt", "md", "markdown", "json", "yaml", "yml", "toml", "xml", "html", "htm",
+  "css", "scss", "js", "mjs", "cjs", "jsx", "ts", "tsx", "py", "rb", "go", "rs",
+  "java", "c", "h", "cpp", "hpp", "cs", "php", "swift", "kt", "lua", "sql",
+  "sh", "bash", "ps1", "bat", "env", "ini", "cfg", "log", "csv",
+]);
+const CHAT_IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif", "apng", "ico"]);
+
+function classifyChatFile(filename) {
+  const ext = path.extname(filename).slice(1).toLowerCase();
+  if (CHAT_IMAGE_EXTS.has(ext)) return "image";
+  if (CHAT_TEXT_EXTS.has(ext) || !ext) return "text";
+  return "binary";
+}
+
+ipcMain.handle("chat:pickAttachments", async () => {
+  const result = await dialog.showOpenDialog(win, {
+    title: "Attach files to chat",
+    properties: ["openFile", "multiSelections"],
+  });
+  if (result.canceled || !result.filePaths?.length) return [];
+  const uploadsDir = path.join(anvilDataDir(), "uploads");
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  const out = [];
+  for (const src of result.filePaths) {
+    const name = path.basename(src);
+    const id = randomUUID();
+    const dest = path.join(uploadsDir, `${id}-${name}`);
+    try {
+      fs.copyFileSync(src, dest);
+    } catch {
+      continue;
+    }
+    const stat = fs.statSync(dest);
+    const kind = classifyChatFile(name);
+    const item = { id, name, path: dest, kind, size: stat.size };
+    if (kind === "image") {
+      const ext = path.extname(name).slice(1).toLowerCase();
+      const mime = IMAGE_MIME[ext] ?? "application/octet-stream";
+      if (stat.size <= 12 * 1024 * 1024) {
+        const buf = fs.readFileSync(dest);
+        item.mime = mime;
+        item.dataUrl = `data:${mime};base64,${buf.toString("base64")}`;
+      }
+    }
+    out.push(item);
+    if (out.length >= 8) break;
+  }
+  return out;
 });
 
 function createWindow() {
