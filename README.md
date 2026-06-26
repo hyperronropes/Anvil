@@ -12,7 +12,7 @@ an Electron + React GUI.
 
 **Source code:** [github.com/hyperronropes/Anvil](https://github.com/hyperronropes/Anvil) — clone this repo to build from source.
 
-**[Join the Discord](https://discord.gg/8WU56Drt7F)** — support, updates, bug reports.
+**Community:** [DeepCode Discord](https://discord.gg/8WU56Drt7F) — Anvil has no separate server; ask there for help (fork makers hang out in the same place).
 
 </div>
 
@@ -73,7 +73,8 @@ Requires PyInstaller and GUI deps (`cd app && npm install`).
 Anvil is a coding assistant. It is **not** designed to roleplay, bypass
 any safety behavior, or act as a general-purpose "jailbreak" tool. If you've got
 a feature request or you think the agent is behaving wrong on a *coding* task,
-that's what the [Discord](https://discord.gg/8WU56Drt7F) and issue tracker are for.
+use [GitHub issues](https://github.com/hyperronropes/Anvil/issues) or the
+[DeepCode Discord](https://discord.gg/8WU56Drt7F) (shared by DeepCode and forks).
 
 ## Notes
 
@@ -83,15 +84,16 @@ that's what the [Discord](https://discord.gg/8WU56Drt7F) and issue tracker are f
 
 ## Distributing Anvil (Discord / elsewhere)
 
-If you share a build, include **both** links so people can verify and compile from source:
+If you share a build, include **both** GitHub links so people can verify and compile from source:
 
 - **Anvil source:** https://github.com/hyperronropes/Anvil  
 - **Upstream:** https://github.com/Schnickenpick/DeepCodev3  
+- **Help / community:** https://discord.gg/8WU56Drt7F (DeepCode Discord — shared by forks, no separate Anvil server)
 
 Pre-built zips also ship `README.md`, `LICENSE`, and `SOURCE.txt` next to `Anvil.exe`.
 In-app: **Settings → General → About & source code**.
 
 ## Support
 
-- **Discord:** https://discord.gg/8WU56Drt7F
-- **Issues:** https://github.com/hyperronropes/Anvil/issues
+- **GitHub issues (Anvil):** https://github.com/hyperronropes/Anvil/issues  
+- **Discord (DeepCode community):** https://discord.gg/8WU56Drt7F — no Anvil-only server; fork makers and users share this one.

@@ -151,6 +151,7 @@ const API: string = (window as any).anvil?.apiUrl ?? "http://127.0.0.1:8765";
 
 const SOURCE_REPO = "https://github.com/hyperronropes/Anvil";
 const UPSTREAM_REPO = "https://github.com/Schnickenpick/DeepCodev3";
+const DEEPCODE_DISCORD = "https://discord.gg/8WU56Drt7F";
 
 const EXPLORER_KEY = "anvil.explorerOpen";
 const CHAT_WIDTH_KEY = "anvil.chatWidth";
@@ -2669,8 +2670,21 @@ function SettingsDialog({
                         </button>
                       </p>
                       <p className="text-faint">
-                        When sharing Anvil.zip, include both links. Clone the repo to build from source
+                        When sharing Anvil.zip, include both GitHub links. Clone the repo to build from source
                         (<span className="font-mono">python build_all.py</span>).
+                      </p>
+                      <p>
+                        <span className="text-secondary">Community help:</span>{" "}
+                        <button
+                          type="button"
+                          className="text-accent hover:underline"
+                          onClick={() => void (window as any).anvil?.openExternal?.(DEEPCODE_DISCORD)}
+                        >
+                          DeepCode Discord
+                        </button>
+                        <span className="text-faint">
+                          {" "}— no separate Anvil server; fork makers and users hang out there.
+                        </span>
                       </p>
                     </div>
                   </SettingsField>

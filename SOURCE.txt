@@ -6,6 +6,8 @@ and build it yourself.
   Anvil (this fork):  https://github.com/hyperronropes/Anvil
   Upstream (DeepCode): https://github.com/Schnickenpick/DeepCodev3
 
+Community help (DeepCode Discord, shared by forks):  https://discord.gg/8WU56Drt7F
+
 Clone the Anvil repo and run:  python build_all.py
 
 LICENSE is included in this folder.
