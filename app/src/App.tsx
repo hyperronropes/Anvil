@@ -149,6 +149,9 @@ function toolFilePath(args: Record<string, unknown> | undefined): string | null 
 const BRIDGE: string = (window as any).anvil?.bridgeUrl ?? "ws://127.0.0.1:8765/ws";
 const API: string = (window as any).anvil?.apiUrl ?? "http://127.0.0.1:8765";
 
+const SOURCE_REPO = "https://github.com/hyperronropes/Anvil";
+const UPSTREAM_REPO = "https://github.com/Schnickenpick/DeepCodev3";
+
 const EXPLORER_KEY = "anvil.explorerOpen";
 const CHAT_WIDTH_KEY = "anvil.chatWidth";
 const EXPLORER_WIDTH_KEY = "anvil.explorerWidth";
@@ -2638,6 +2641,37 @@ function SettingsDialog({
                       >
                         Open
                       </button>
+                    </div>
+                  </SettingsField>
+                  <SettingsField
+                    label="About & source code"
+                    hint="GPL-3.0 — full source is public. Required when distributing builds."
+                  >
+                    <div className="discord-embed flex flex-col gap-2 px-3 py-2.5 text-[11px] leading-relaxed text-muted">
+                      <p>
+                        <span className="text-secondary">Anvil source:</span>{" "}
+                        <button
+                          type="button"
+                          className="text-accent hover:underline"
+                          onClick={() => void (window as any).anvil?.openExternal?.(SOURCE_REPO)}
+                        >
+                          github.com/hyperronropes/Anvil
+                        </button>
+                      </p>
+                      <p>
+                        <span className="text-secondary">Upstream (DeepCode v3):</span>{" "}
+                        <button
+                          type="button"
+                          className="text-accent hover:underline"
+                          onClick={() => void (window as any).anvil?.openExternal?.(UPSTREAM_REPO)}
+                        >
+                          github.com/Schnickenpick/DeepCodev3
+                        </button>
+                      </p>
+                      <p className="text-faint">
+                        When sharing Anvil.zip, include both links. Clone the repo to build from source
+                        (<span className="font-mono">python build_all.py</span>).
+                      </p>
                     </div>
                   </SettingsField>
                 </div>

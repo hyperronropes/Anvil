@@ -81,6 +81,16 @@ that's what the [Discord](https://discord.gg/8WU56Drt7F) and issue tracker are f
 - App logs: `~/.Anvil/logs/latest.log` (Settings → Diagnostics → Open).
 - Configured against a hosted model gateway (`anvil/src/anvil/api.py`).
 
+## Distributing Anvil (Discord / elsewhere)
+
+If you share a build, include **both** links so people can verify and compile from source:
+
+- **Anvil source:** https://github.com/hyperronropes/Anvil  
+- **Upstream:** https://github.com/Schnickenpick/DeepCodev3  
+
+Pre-built zips also ship `README.md`, `LICENSE`, and `SOURCE.txt` next to `Anvil.exe`.
+In-app: **Settings → General → About & source code**.
+
 ## Support
 
 - **Discord:** https://discord.gg/8WU56Drt7F

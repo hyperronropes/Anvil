@@ -557,6 +557,11 @@ ipcMain.handle("shell:openPath", (_e, targetPath) => {
   return shell.openPath(targetPath);
 });
 
+ipcMain.handle("shell:openExternal", (_e, url) => {
+  if (!url || typeof url !== "string") return false;
+  return shell.openExternal(url);
+});
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1400,

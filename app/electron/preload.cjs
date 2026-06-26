@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld("anvil", {
   openServiceLogs: () => ipcRenderer.invoke("services:openLogs"),
   getLatestLogPath: () => ipcRenderer.invoke("services:latestLog"),
   openPath: (targetPath) => ipcRenderer.invoke("shell:openPath", targetPath),
+  openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
   onBridgeStatus: (cb) => {
     const handler = (_ev, status) => cb(status);
     ipcRenderer.on("bridge:status", handler);

@@ -71,6 +71,10 @@ def main():
         if os.path.isdir(anvil_dir):
             shutil.rmtree(anvil_dir, ignore_errors=True)
         shutil.copytree(gui_unpacked, anvil_dir, dirs_exist_ok=True)
+        for name in ("LICENSE", "README.md", "SOURCE.txt"):
+            src = os.path.join(ROOT, name)
+            if os.path.isfile(src):
+                shutil.copy2(src, os.path.join(anvil_dir, name))
         shutil.make_archive(zip_base, "zip", DIST, "Anvil")
         print("  dist/Anvil.zip  (extract, then run Anvil/Anvil.exe)")
         run([npm, "run", "dist:brand"], cwd=APP, shell=(os.name == "nt"), env=env)
